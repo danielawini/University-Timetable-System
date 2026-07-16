@@ -10,7 +10,7 @@ public class UserDAO {
 
     // Method to verify login credentials
     public boolean validateUser(String username, String password) {
-        String query = "SELECT password_hash FROM adminusers WHERE username = ?";
+        String query = "SELECT password_hash FROM users WHERE username = ?";
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(query)) {
