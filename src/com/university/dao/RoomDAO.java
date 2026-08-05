@@ -1,40 +1,116 @@
 package com.university.dao;
 
 import com.university.models.Room;
+import com.university.database.DatabaseConnection;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-public class RoomDAO { // Ensure this opening brace exists
+public class RoomDAO {
+    private Connection connection;
 
-    // Database connection details
-    private static final String URL = "jdbc:mysql://localhost:3306/UniversityTimetableDB";
-    private static final String USER = "root";
-    private static final String PASSWORD = "Daniel1441@";
+    public RoomDAO() {
+        try {
+            this.connection = DatabaseConnection.getConnection();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
 
-    public void addRoom(Room room) throws SQLException {
-        String sql = "INSERT INTO Rooms (room_name, capacity, facilities) VALUES (?, ?, ?)";
-        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setString(1, room.getRoomName());
-            stmt.setInt(2, room.getCapacity());
-            stmt.setString(3, room.getFacilities());
+    public RoomDAO(Connection connection) {
+        this.connection = connection;
+    }
+
+    public void addRoom(String roomName, int capacity) throws SQLException {
+        ensureConnection();
+        String query = "INSERT INTO rooms (room_name, capacity) VALUES (?, ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(query)) {
+            stmt.setString(1, roomName);
+            stmt.setInt(2, capacity);
             stmt.executeUpdate();
         }
     }
-    // Ensure every method is closed with a closing brace '}'
 
-    public List<Room> getAllRooms() throws SQLException {
-        List<Room> rooms = new ArrayList<>();
-        String sql = "SELECT * FROM Rooms";
-        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+    public int addRoomAndReturnId(Room room) throws SQLException {
+        ensureConnection();
+        String query = "INSERT INTO rooms (room_name, capacity) VALUES (?, ?)";
+        try (PreparedStatement stmt = connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setString(1, room.getRoomName());
+            stmt.setInt(2, room.getCapacity());
+            stmt.executeUpdate();
+
+            try (ResultSet rs = stmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        }
+        return -1;
+    }
+
+    public List<String> getAllRooms() throws SQLException {
+        ensureConnection();
+        List<String> rooms = new ArrayList<>();
+        String query = "SELECT * FROM rooms";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+            ResultSetMetaData metaData = rs.getMetaData();
+            String pkColumn = metaData.getColumnName(1);
+
             while (rs.next()) {
-                rooms.add(new Room(rs.getInt("room_id"), rs.getString("room_name"),
-                        rs.getInt("capacity"), rs.getString("facilities")));
+                String id = rs.getString(pkColumn);
+                String name = getColumnValueSafely(rs, "room_name", "name", "title");
+                String capacity = getColumnValueSafely(rs, "capacity", "cap", "size");
+
+                rooms.add(id + ": " + name + " (Capacity: " + capacity + ")");
             }
         }
         return rooms;
     }
-} // <--- CRITICAL: Make sure this final closing brace is present for the class
+
+    public void deleteRoom(String roomId) throws SQLException {
+        ensureConnection();
+        try (Statement stmt = connection.createStatement()) {
+            stmt.executeUpdate("SET FOREIGN_KEY_CHECKS = 0");
+
+            try {
+                stmt.executeUpdate("DELETE FROM schedule WHERE room_id = '" + roomId + "'");
+            } catch (SQLException ignored) {}
+
+            String pkColumn = "id";
+            try (ResultSet rs = stmt.executeQuery("SHOW KEYS FROM rooms WHERE Key_name = 'PRIMARY'")) {
+                if (rs.next()) {
+                    pkColumn = rs.getString("Column_name");
+                }
+            } catch (Exception ignored) {}
+
+            stmt.executeUpdate("DELETE FROM rooms WHERE " + pkColumn + " = '" + roomId + "'");
+            stmt.executeUpdate("ALTER TABLE rooms AUTO_INCREMENT = 1");
+            stmt.executeUpdate("SET FOREIGN_KEY_CHECKS = 1");
+        } catch (SQLException e) {
+            try (Statement cleanup = connection.createStatement()) {
+                cleanup.executeUpdate("SET FOREIGN_KEY_CHECKS = 1");
+            }
+            throw e;
+        }
+    }
+
+    public void deleteRoom(int roomId) throws SQLException {
+        deleteRoom(String.valueOf(roomId));
+    }
+
+    private String getColumnValueSafely(ResultSet rs, String... possibleNames) {
+        for (String name : possibleNames) {
+            try {
+                return rs.getString(name);
+            } catch (SQLException ignored) {}
+        }
+        return "N/A";
+    }
+
+    private void ensureConnection() throws SQLException {
+        if (this.connection == null || this.connection.isClosed()) {
+            this.connection = DatabaseConnection.getConnection();
+        }
+    }
+}
