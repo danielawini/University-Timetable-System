@@ -22,7 +22,6 @@ import java.util.List;
 
 public class AdminDashboardApp extends Application {
 
-    // Shared references or callbacks to keep dropdowns synchronized across tabs if needed
     private ComboBox<String> sharedCourseCb;
 
     @Override
@@ -63,7 +62,7 @@ public class AdminDashboardApp extends Application {
 
         Tab courseTab = new Tab("Courses", createCourseManagementView());
         Tab roomTab = new Tab("Rooms", createRoomManagementView());
-        Tab lecturerTab = new Tab("Lecturers", createLecturerManagementView());
+        Tab lecturerTab = new Tab("Lecturers & Contacts", createLecturerManagementView());
         Tab assignTab = new Tab("Manual Assignment", createManualAssignmentView());
         Tab timetableTab = new Tab("Timetable Viewer", createTimetableManagementView());
         Tab reportTab = new Tab("Reports & Export", createReportsView());
@@ -72,7 +71,7 @@ public class AdminDashboardApp extends Application {
 
         mainLayout.getChildren().addAll(topNavBar, tabPane);
 
-        Scene scene = new Scene(mainLayout, 900, 720);
+        Scene scene = new Scene(mainLayout, 950, 720);
         primaryStage.setScene(scene);
         primaryStage.show();
     }
@@ -322,92 +321,196 @@ public class AdminDashboardApp extends Application {
 
     private VBox createLecturerManagementView() {
         VBox box = createCardLayout();
-        Label label = new Label("Lecturer Directory & Management");
+        Label label = new Label("Lecturer Directory, Contacts & Email Management");
         label.setStyle("-fx-font-weight: bold; -fx-font-size: 15px; -fx-text-fill: #2c3e50;");
 
-        TextField lecturerField = new TextField();
-        lecturerField.setPromptText("Enter Lecturer Full Name");
-        lecturerField.setMaxWidth(400);
+        TableView<LecturerModel> table = new TableView<>();
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setPrefHeight(200);
 
-        Button addBtn = new Button("Add Lecturer");
+        TableColumn<LecturerModel, String> nameCol = new TableColumn<>("Lecturer Name");
+        nameCol.setCellValueFactory(data -> data.getValue().nameProperty());
+
+        TableColumn<LecturerModel, String> deptCol = new TableColumn<>("Department");
+        deptCol.setCellValueFactory(data -> data.getValue().departmentProperty());
+
+        TableColumn<LecturerModel, String> emailCol = new TableColumn<>("Email Address");
+        emailCol.setCellValueFactory(data -> data.getValue().emailProperty());
+
+        TableColumn<LecturerModel, String> phoneCol = new TableColumn<>("Phone Contact");
+        phoneCol.setCellValueFactory(data -> data.getValue().phoneProperty());
+
+        table.getColumns().addAll(nameCol, deptCol, emailCol, phoneCol);
+
+        ObservableList<LecturerModel> lecturerList = FXCollections.observableArrayList();
+        loadLecturersFromDB(lecturerList);
+        table.setItems(lecturerList);
+
+        VBox formBox = new VBox(10);
+        formBox.setPadding(new Insets(10, 0, 0, 0));
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("Enter Lecturer Full Name");
+        nameField.setMaxWidth(400);
+
+        TextField deptField = new TextField();
+        deptField.setPromptText("Enter Department (e.g., ICT)");
+        deptField.setMaxWidth(400);
+
+        TextField emailField = new TextField();
+        emailField.setPromptText("Enter Email Address (e.g., lecturer@uew.edu.gh)");
+        emailField.setMaxWidth(400);
+
+        TextField phoneField = new TextField();
+        phoneField.setPromptText("Enter Phone Number (e.g., +233 24 000 0000)");
+        phoneField.setMaxWidth(400);
+
+        Button addUpdateBtn = new Button("Add / Update Lecturer Contact");
         Button deleteBtn = new Button("Remove Lecturer");
-        Button refreshBtn = new Button("Refresh Lecturers");
+        Button refreshBtn = new Button("Refresh Directory");
 
-        styleGreenButton(addBtn);
+        styleGreenButton(addUpdateBtn);
         styleRedButton(deleteBtn);
         styleBlueButton(refreshBtn);
 
-        HBox btnBox = new HBox(10, addBtn, deleteBtn, refreshBtn);
+        HBox btnBox = new HBox(10, addUpdateBtn, deleteBtn, refreshBtn);
         btnBox.setAlignment(Pos.CENTER_LEFT);
 
-        ListView<String> listView = new ListView<>();
-        listView.setPrefHeight(180);
-
-        loadLecturersIntoView(listView);
-
-        addBtn.setOnAction(e -> {
-            String lecturerName = lecturerField.getText().trim();
-            if (lecturerName.isEmpty()) {
-                showAlert("Input Error", "Please enter the lecturer's full name.");
-                return;
-            }
-            try (Connection conn = DatabaseConnection.getConnection()) {
-                LecturerDAO dao = new LecturerDAO(conn);
-                dao.addLecturer(lecturerName);
-                showAlert("Success", "Lecturer added successfully!");
-                lecturerField.clear();
-                loadLecturersIntoView(listView);
-            } catch (SQLException ex) {
-                showAlert("Database Error", ex.getMessage());
+        // Populate form fields when a table row is clicked
+        table.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+            if (newSelection != null) {
+                nameField.setText(newSelection.getName());
+                deptField.setText(newSelection.getDepartment());
+                emailField.setText(newSelection.getEmail().equals("Not Provided") ? "" : newSelection.getEmail());
+                phoneField.setText(newSelection.getPhone().equals("Not Provided") ? "" : newSelection.getPhone());
             }
         });
 
+        addUpdateBtn.setOnAction(e -> {
+            String name = nameField.getText().trim();
+            String dept = deptField.getText().trim();
+            String email = emailField.getText().trim();
+            String phone = phoneField.getText().trim();
+
+            if (name.isEmpty()) {
+                showAlert("Input Error", "Please enter the lecturer's name.");
+                return;
+            }
+
+            saveOrUpdateLecturer(name, dept, email, phone);
+            loadLecturersFromDB(lecturerList);
+            nameField.clear();
+            deptField.clear();
+            emailField.clear();
+            phoneField.clear();
+            table.getSelectionModel().clearSelection();
+            showAlert("Success", "Lecturer contact details saved/updated successfully!");
+        });
+
         deleteBtn.setOnAction(e -> {
-            String selected = listView.getSelectionModel().getSelectedItem();
+            LecturerModel selected = table.getSelectionModel().getSelectedItem();
             if (selected == null) {
-                showAlert("Selection Error", "Please select a lecturer from the list to remove.");
+                showAlert("Selection Error", "Please select a lecturer from the table to remove.");
                 return;
             }
 
             Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
             alert.setTitle("Confirm Deletion");
             alert.setHeaderText("Remove Lecturer");
-            alert.setContentText("Are you sure you want to remove this lecturer?\n\n" + selected);
+            alert.setContentText("Are you sure you want to remove this lecturer and their contact info?\n\n" + selected.getName());
 
             alert.showAndWait().ifPresent(response -> {
                 if (response == ButtonType.OK) {
-                    try {
-                        int id = Integer.parseInt(selected.split(":")[0].trim());
-                        try (Connection conn = DatabaseConnection.getConnection()) {
-                            LecturerDAO dao = new LecturerDAO(conn);
-                            dao.deleteLecturer(id);
-                            showAlert("Success", "Lecturer removed successfully!");
-                            loadLecturersIntoView(listView);
-                            listView.getSelectionModel().clearSelection();
-                        }
-                    } catch (Exception ex) {
-                        showAlert("Error", "Could not delete lecturer: " + ex.getMessage());
+                    try (Connection conn = DatabaseConnection.getConnection();
+                         PreparedStatement pstmt = conn.prepareStatement("DELETE FROM lecturers WHERE lecturer_name = ?")) {
+                        pstmt.setString(1, selected.getName());
+                        pstmt.executeUpdate();
+                        showAlert("Success", "Lecturer removed successfully!");
+                        loadLecturersFromDB(lecturerList);
+                        nameField.clear();
+                        deptField.clear();
+                        emailField.clear();
+                        phoneField.clear();
+                        table.getSelectionModel().clearSelection();
+                    } catch (SQLException ex) {
+                        showAlert("Database Error", "Could not delete lecturer: " + ex.getMessage());
                     }
                 }
             });
         });
 
         refreshBtn.setOnAction(e -> {
-            loadLecturersIntoView(listView);
-            listView.getSelectionModel().clearSelection();
+            loadLecturersFromDB(lecturerList);
+            nameField.clear();
+            deptField.clear();
+            emailField.clear();
+            phoneField.clear();
+            table.getSelectionModel().clearSelection();
         });
 
-        box.getChildren().addAll(label, new Separator(), lecturerField, btnBox, new Label("Active Lecturers Directory:"), listView);
+        formBox.getChildren().addAll(
+                new Label("Lecturer Details:"),
+                nameField, deptField, emailField, phoneField,
+                btnBox
+        );
+
+        box.getChildren().addAll(label, new Separator(), table, formBox);
         return box;
     }
 
-    private void loadLecturersIntoView(ListView<String> listView) {
+    private void loadLecturersFromDB(ObservableList<LecturerModel> list) {
+        list.clear();
+        String query = "SELECT lecturer_name, department, email, phone FROM lecturers";
+        try (Connection conn = DatabaseConnection.getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+            while (rs.next()) {
+                list.add(new LecturerModel(
+                        rs.getString("lecturer_name"),
+                        rs.getString("department"),
+                        rs.getString("email"),
+                        rs.getString("phone")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveOrUpdateLecturer(String name, String dept, String email, String phone) {
+        String checkQuery = "SELECT COUNT(*) FROM lecturers WHERE lecturer_name = ?";
+        String updateQuery = "UPDATE lecturers SET department = ?, email = ?, phone = ? WHERE lecturer_name = ?";
+        String insertQuery = "INSERT INTO lecturers (lecturer_name, department, email, phone) VALUES (?, ?, ?, ?)";
+
         try (Connection conn = DatabaseConnection.getConnection()) {
-            LecturerDAO dao = new LecturerDAO(conn);
-            List<String> list = dao.getAllLecturers();
-            listView.setItems(FXCollections.observableArrayList(list));
-        } catch (SQLException ex) {
-            showAlert("Database Error", "Could not load lecturers: " + ex.getMessage());
+            boolean exists = false;
+            try (PreparedStatement checkStmt = conn.prepareStatement(checkQuery)) {
+                checkStmt.setString(1, name);
+                ResultSet rs = checkStmt.executeQuery();
+                if (rs.next()) {
+                    exists = rs.getInt(1) > 0;
+                }
+            }
+
+            if (exists) {
+                try (PreparedStatement ps = conn.prepareStatement(updateQuery)) {
+                    ps.setString(1, dept.isEmpty() ? null : dept);
+                    ps.setString(2, email.isEmpty() ? null : email);
+                    ps.setString(3, phone.isEmpty() ? null : phone);
+                    ps.setString(4, name);
+                    ps.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ps = conn.prepareStatement(insertQuery)) {
+                    ps.setString(1, name);
+                    ps.setString(2, dept.isEmpty() ? null : dept);
+                    ps.setString(3, email.isEmpty() ? null : email);
+                    ps.setString(4, phone.isEmpty() ? null : phone);
+                    ps.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
@@ -489,7 +592,7 @@ public class AdminDashboardApp extends Application {
 
                 try (Connection conn = DatabaseConnection.getConnection()) {
 
-                    // 1. Check if the Room is already occupied at the same day & time slot
+                    // 1. Check Room Conflict
                     String roomCheckQuery = "SELECT COUNT(*) FROM schedules WHERE room_id = ? AND day_of_week = ? AND time_slot = ?";
                     try (PreparedStatement roomStmt = conn.prepareStatement(roomCheckQuery)) {
                         roomStmt.setInt(1, roomId);
@@ -503,7 +606,7 @@ public class AdminDashboardApp extends Application {
                         }
                     }
 
-                    // 2. Check if the Lecturer is already teaching somewhere else at the same day & time slot
+                    // 2. Check Lecturer Conflict
                     String lecturerCheckQuery = "SELECT COUNT(*) FROM schedules WHERE lecturer_id = ? AND day_of_week = ? AND time_slot = ?";
                     try (PreparedStatement lecStmt = conn.prepareStatement(lecturerCheckQuery)) {
                         lecStmt.setInt(1, lecturerId);
@@ -517,7 +620,7 @@ public class AdminDashboardApp extends Application {
                         }
                     }
 
-                    // 3. If no conflicts found, prompt for final confirmation and save
+                    // 3. Confirm and Save
                     Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
                     confirmAlert.setTitle("Confirm Assignment");
                     confirmAlert.setHeaderText("Save Manual Schedule Entry");
@@ -701,54 +804,54 @@ public class AdminDashboardApp extends Application {
         loadTimetable.run();
 
         refreshBtn.setOnAction(e -> {
-            searchCourseField.clear();
-            deptFilterCb.setValue("All Departments");
-            levelFilterCb.setValue("All Levels");
             loadTimetable.run();
+            updateFilter.run();
         });
 
         deleteSelectedBtn.setOnAction(e -> {
-            ScheduleRecord selectedRecord = table.getSelectionModel().getSelectedItem();
-            if (selectedRecord == null) {
-                showAlert("Selection Error", "Please select a timetable entry from the table to delete.");
+            ScheduleRecord selected = table.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Selection Error", "Please select a schedule entry from the table to delete.");
                 return;
             }
 
-            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmAlert.setTitle("Confirm Deletion");
-            confirmAlert.setHeaderText("Delete Schedule Entry");
-            confirmAlert.setContentText("Are you sure you want to remove the schedule for Course: " + selectedRecord.getCourseCode() + "?");
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Confirm Deletion");
+            alert.setHeaderText("Delete Schedule Entry");
+            alert.setContentText("Are you sure you want to remove this timetable entry?\n\nCourse Code: " + selected.getCourseCode() + " (" + selected.getDay() + " " + selected.getTime() + ")");
 
-            confirmAlert.showAndWait().ifPresent(response -> {
+            alert.showAndWait().ifPresent(response -> {
                 if (response == ButtonType.OK) {
                     try (Connection conn = DatabaseConnection.getConnection();
                          PreparedStatement pstmt = conn.prepareStatement("DELETE FROM schedules WHERE schedule_id = ?")) {
-                        pstmt.setInt(1, Integer.parseInt(selectedRecord.getId()));
+                        pstmt.setInt(1, Integer.parseInt(selected.getId()));
                         pstmt.executeUpdate();
-                        showAlert("Success", "Schedule entry removed successfully!");
+                        showAlert("Success", "Schedule entry deleted successfully!");
                         loadTimetable.run();
-                    } catch (Exception ex) {
-                        showAlert("Error", "Could not delete schedule entry: " + ex.getMessage());
+                        updateFilter.run();
+                    } catch (SQLException ex) {
+                        showAlert("Database Error", "Could not delete schedule entry: " + ex.getMessage());
                     }
                 }
             });
         });
 
         clearTableBtn.setOnAction(e -> {
-            Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
-            confirmAlert.setTitle("Confirm Clear All");
-            confirmAlert.setHeaderText("Clear Entire Timetable");
-            confirmAlert.setContentText("Are you sure you want to delete ALL schedules in the system?");
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Confirm Clear All");
+            alert.setHeaderText("Clear Entire Timetable");
+            alert.setContentText("Are you sure you want to remove all timetable schedule records from the system?");
 
-            confirmAlert.showAndWait().ifPresent(response -> {
+            alert.showAndWait().ifPresent(response -> {
                 if (response == ButtonType.OK) {
                     try (Connection conn = DatabaseConnection.getConnection();
                          Statement stmt = conn.createStatement()) {
                         stmt.executeUpdate("DELETE FROM schedules");
-                        showAlert("Success", "All schedules have been cleared.");
+                        showAlert("Success", "All timetable records have been cleared!");
                         loadTimetable.run();
-                    } catch (Exception ex) {
-                        showAlert("Error", "Could not clear schedules: " + ex.getMessage());
+                        updateFilter.run();
+                    } catch (SQLException ex) {
+                        showAlert("Database Error", "Could not clear timetable: " + ex.getMessage());
                     }
                 }
             });
@@ -760,66 +863,90 @@ public class AdminDashboardApp extends Application {
 
     private VBox createReportsView() {
         VBox box = createCardLayout();
-        Label label = new Label("Reports & Timetable Export Hub");
+        Label label = new Label("System Reports & Summary Center");
         label.setStyle("-fx-font-weight: bold; -fx-font-size: 15px; -fx-text-fill: #2c3e50;");
 
-        Label infoLabel = new Label("Generate complete system reports or export generated schedules for administrative review.");
-        infoLabel.setStyle("-fx-text-fill: #7f8c8d;");
+        TextArea reportArea = new TextArea();
+        reportArea.setEditable(false);
+        reportArea.setPrefHeight(250);
+        reportArea.setStyle("-fx-font-family: monospace; -fx-font-size: 12px;");
 
-        Button exportCsvBtn = new Button("📄 Export Timetable Summary (CSV)");
-        Button systemStatsBtn = new Button("📊 View System Summary Counts");
+        Button generateReportBtn = new Button("📊 Generate Full System Summary Report");
+        styleBlueButton(generateReportBtn);
 
-        styleBlueButton(exportCsvBtn);
-        styleGreenButton(systemStatsBtn);
+        generateReportBtn.setOnAction(e -> {
+            StringBuilder sb = new StringBuilder();
+            sb.append("==================================================\n");
+            sb.append("       UNIVERSITY TIMETABLE SYSTEM REPORT       \n");
+            sb.append("==================================================\n\n");
 
-        exportCsvBtn.setOnAction(e -> showAlert("Export Info", "Timetable export feature initialized. You can integrate FileChooser here to save outputs as CSV/PDF."));
-
-        systemStatsBtn.setOnAction(e -> {
             try (Connection conn = DatabaseConnection.getConnection();
                  Statement stmt = conn.createStatement()) {
-                ResultSet rsCourses = stmt.executeQuery("SELECT COUNT(*) FROM courses");
-                int coursesCount = rsCourses.next() ? rsCourses.getInt(1) : 0;
 
-                ResultSet rsRooms = stmt.executeQuery("SELECT COUNT(*) FROM rooms");
-                int roomsCount = rsRooms.next() ? rsRooms.getInt(1) : 0;
+                try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM courses")) {
+                    if (rs.next()) sb.append("• Total Registered Courses: ").append(rs.getInt(1)).append("\n");
+                }
 
-                ResultSet rsLecturers = stmt.executeQuery("SELECT COUNT(*) FROM lecturers");
-                int lecturersCount = rsLecturers.next() ? rsLecturers.getInt(1) : 0;
+                try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM rooms")) {
+                    if (rs.next()) sb.append("• Total Registered Rooms: ").append(rs.getInt(1)).append("\n");
+                }
 
-                ResultSet rsSchedules = stmt.executeQuery("SELECT COUNT(*) FROM schedules");
-                int schedulesCount = rsSchedules.next() ? rsSchedules.getInt(1) : 0;
+                try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM lecturers")) {
+                    if (rs.next()) sb.append("• Total Active Lecturers: ").append(rs.getInt(1)).append("\n");
+                }
 
-                showAlert("System Statistics",
-                        "• Total Courses: " + coursesCount + "\n" +
-                                "• Total Rooms: " + roomsCount + "\n" +
-                                "• Total Lecturers: " + lecturersCount + "\n" +
-                                "• Scheduled Slots: " + schedulesCount);
+                try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM schedules")) {
+                    if (rs.next()) sb.append("• Total Scheduled Lecture Slots: ").append(rs.getInt(1)).append("\n");
+                }
+
+                sb.append("\n--------------------------------------------------\n");
+                sb.append("DEPARTMENT BREAKDOWN:\n");
+                sb.append("--------------------------------------------------\n");
+
+                try (ResultSet rs = stmt.executeQuery("SELECT department, COUNT(*) as count FROM courses WHERE department IS NOT NULL GROUP BY department")) {
+                    boolean hasDept = false;
+                    while (rs.next()) {
+                        hasDept = true;
+                        sb.append(" - ").append(rs.getString("department")).append(": ").append(rs.getInt("count")).append(" courses\n");
+                    }
+                    if (!hasDept) {
+                        sb.append(" No departmental data available.\n");
+                    }
+                }
+
+                sb.append("\n==================================================\n");
+                sb.append("Report generated successfully.\n");
+
             } catch (SQLException ex) {
-                showAlert("Database Error", "Could not fetch system statistics: " + ex.getMessage());
+                sb.append("Error generating report: ").append(ex.getMessage());
             }
+
+            reportArea.setText(sb.toString());
         });
 
-        box.getChildren().addAll(label, new Separator(), infoLabel, exportCsvBtn, systemStatsBtn);
+        generateReportBtn.fire();
+
+        box.getChildren().addAll(label, new Separator(), reportArea, generateReportBtn);
         return box;
     }
 
     private VBox createCardLayout() {
-        VBox card = new VBox(12);
-        card.setPadding(new Insets(20));
-        card.setStyle("-fx-background-color: #ffffff; -fx-background-radius: 10px; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.04), 8, 0, 0, 2);");
-        return card;
+        VBox box = new VBox(12);
+        box.setPadding(new Insets(20));
+        box.setStyle("-fx-background-color: #ffffff; -fx-background-radius: 10px; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.04), 8, 0, 0, 2);");
+        return box;
     }
 
     private void styleGreenButton(Button btn) {
-        btn.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5px; -fx-cursor: hand;");
+        btn.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-padding: 8px 15px; -fx-background-radius: 5px;");
     }
 
     private void styleRedButton(Button btn) {
-        btn.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5px; -fx-cursor: hand;");
+        btn.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-padding: 8px 15px; -fx-background-radius: 5px;");
     }
 
     private void styleBlueButton(Button btn) {
-        btn.setStyle("-fx-background-color: #2980b9; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5px; -fx-cursor: hand;");
+        btn.setStyle("-fx-background-color: #2980b9; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-padding: 8px 15px; -fx-background-radius: 5px;");
     }
 
     private void showAlert(String title, String message) {
@@ -830,7 +957,32 @@ public class AdminDashboardApp extends Application {
         alert.showAndWait();
     }
 
-    // Helper Record Model for TableView binding
+    public static class LecturerModel {
+        private final SimpleStringProperty name;
+        private final SimpleStringProperty department;
+        private final SimpleStringProperty email;
+        private final SimpleStringProperty phone;
+
+        public LecturerModel(String name, String department, String email, String phone) {
+            this.name = new SimpleStringProperty(name != null ? name : "");
+            this.department = new SimpleStringProperty(department != null ? department : "N/A");
+            this.email = new SimpleStringProperty(email != null && !email.isEmpty() ? email : "Not Provided");
+            this.phone = new SimpleStringProperty(phone != null && !phone.isEmpty() ? phone : "Not Provided");
+        }
+
+        public String getName() { return name.get(); }
+        public SimpleStringProperty nameProperty() { return name; }
+
+        public String getDepartment() { return department.get(); }
+        public SimpleStringProperty departmentProperty() { return department; }
+
+        public String getEmail() { return email.get(); }
+        public SimpleStringProperty emailProperty() { return email; }
+
+        public String getPhone() { return phone.get(); }
+        public SimpleStringProperty phoneProperty() { return phone; }
+    }
+
     public static class ScheduleRecord {
         private final SimpleStringProperty id;
         private final SimpleStringProperty department;
