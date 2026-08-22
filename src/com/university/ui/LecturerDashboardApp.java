@@ -55,11 +55,7 @@ public class LecturerDashboardApp extends Application {
 
         Button backBtn = new Button("⬅ Back to Login");
         styleRedButton(backBtn);
-        backBtn.setOnAction(e -> {
-            primaryStage.close();
-            Stage loginStage = new Stage();
-            new LoginApp().start(loginStage);
-        });
+        backBtn.setOnAction(e -> confirmAndReturnToLogin(primaryStage));
 
         VBox titleTitles = new VBox(3);
         Label titleLabel = new Label("Faculty Member Dashboard");
@@ -70,7 +66,7 @@ public class LecturerDashboardApp extends Application {
 
         topNavBar.getChildren().addAll(backBtn, titleTitles);
 
-        // REQUIREMENT 1 & 3: Profile, Admin Contact & Assigned Courses Summary Card (Before Table View)
+        // Profile, Admin Contact & Assigned Courses Summary Card (Before Table View)
         VBox profileCard = createCardLayout();
         Label profileTitle = new Label("👤 Lecturer Profile & Administrative Support");
         profileTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 14px; -fx-text-fill: #2c3e50;");
@@ -106,7 +102,7 @@ public class LecturerDashboardApp extends Application {
         filterControls.getChildren().addAll(searchField, exportBtn);
         filterCard.getChildren().addAll(filterTitle, new Separator(), filterControls);
 
-        // Schedule Table View Card (REQUIREMENT 4: Strict to this lecturer only)
+        // Schedule Table View Card (Strict to this lecturer only)
         VBox tableCard = createCardLayout();
         table = new TableView<>();
         table.setPrefHeight(300);
@@ -170,6 +166,22 @@ public class LecturerDashboardApp extends Application {
         primaryStage.show();
     }
 
+    // --- Logout Confirmation Helper ---
+    private void confirmAndReturnToLogin(Stage currentStage) {
+        Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmAlert.setTitle("Confirm Logout");
+        confirmAlert.setHeaderText("Are you sure you want to go back to login?");
+        confirmAlert.setContentText("Your current session will be closed.");
+
+        confirmAlert.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                currentStage.close();
+                Stage loginStage = new Stage();
+                new LoginApp().start(loginStage);
+            }
+        });
+    }
+
     private String fetchLecturerEmail(String name) {
         String query = "SELECT email FROM lecturers WHERE lecturer_name = ?";
         try (Connection conn = DatabaseConnection.getConnection();
@@ -229,7 +241,6 @@ public class LecturerDashboardApp extends Application {
 
     private void loadLecturerTimetable(String targetLecturer) {
         masterData.clear();
-        // Strict restriction: Only query records belonging to this logged-in lecturer
         String query = "SELECT c.course_code, c.course_name, c.department, c.level, " +
                 "r.room_name, s.day_of_week, s.time_slot " +
                 "FROM schedules s " +

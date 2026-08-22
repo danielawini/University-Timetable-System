@@ -281,6 +281,8 @@ public class LoginApp {
                     return;
                 }
 
+                // Added success alert for students matching Admin & Lecturer
+                showAlert("Success", "Login successfully!");
                 primaryStage.close();
                 Stage studentStage = new Stage();
                 new StudentDashboardApp(chosenDept, chosenLevel).start(studentStage);

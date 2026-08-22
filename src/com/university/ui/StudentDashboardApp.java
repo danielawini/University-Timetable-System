@@ -57,11 +57,7 @@ public class StudentDashboardApp extends Application {
         Button backBtn = new Button("⬅ Back to Login");
         styleRedButton(backBtn);
         backBtn.setPrefHeight(38);
-        backBtn.setOnAction(e -> {
-            primaryStage.close();
-            Stage loginStage = new Stage();
-            new LoginApp().start(loginStage);
-        });
+        backBtn.setOnAction(e -> confirmAndReturnToLogin(primaryStage));
 
         VBox titleTitles = new VBox(3);
         Label titleLabel = new Label("Student Portal — " + studentDepartment + " (Level " + studentLevel + ")");
@@ -87,6 +83,22 @@ public class StudentDashboardApp extends Application {
         Scene scene = new Scene(mainLayout, 960, 680);
         primaryStage.setScene(scene);
         primaryStage.show();
+    }
+
+    // --- Logout Confirmation Helper ---
+    private void confirmAndReturnToLogin(Stage currentStage) {
+        Alert confirmAlert = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmAlert.setTitle("Confirm Logout");
+        confirmAlert.setHeaderText("Are you sure you want to go back to login?");
+        confirmAlert.setContentText("Your current session will be closed.");
+
+        confirmAlert.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                currentStage.close();
+                Stage loginStage = new Stage();
+                new LoginApp().start(loginStage);
+            }
+        });
     }
 
     // --- Tab 1: My Strict Department & Level Timetable ---
